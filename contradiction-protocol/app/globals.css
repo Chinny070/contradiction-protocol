@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #EEE8DC;
+  --panel: #FBF8F0;
+  --text: #11100E;
+  --muted: #5E574E;
+  --primary: #243B36;
+  --primary-soft: #D7E2D8;
+  --accent: #A85F3D;
+  --accent-dark: #743C2A;
+  --evidence-blue: #7B9AAD;
+  --verdict-gold: #B99A5B;
+  --danger: #8E3024;
+  --border: rgba(17,16,14,0.14);
+  --console: #151512;
+  --console-text: #E9E0CE;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+.hash-text {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.console-panel {
+  background: var(--console);
+  color: var(--console-text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide-up { animation: slide-up 0.35s ease-out forwards; }
+
+@keyframes type-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
