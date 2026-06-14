@@ -2,6 +2,7 @@
 import { useAccount } from 'wagmi';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { DEMO_MODE, DEMO_ADDRESS } from '@/lib/config/demo';
 import { Card } from '@/components/ui/Card';
 import { Badge, WaxSealBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -62,15 +63,19 @@ const typeIcon: Record<string, React.ReactNode> = {
 
 export default function Dashboard() {
   const { isConnected, address } = useAccount();
+  const [mounted, setMounted] = useState(false);
   const [agreements, setAgreements] = useState<AgreementRecord[]>([]);
   const [reveals, setReveals] = useState<RevealRecord[]>([]);
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => {
+    if (!mounted) return;
     setAgreements(JSON.parse(localStorage.getItem('cp:agreements') || '[]'));
     setReveals(JSON.parse(localStorage.getItem('cp:reveals') || '[]'));
-  }, []);
+  }, [mounted]);
 
-  if (!isConnected) {
+  if (!mounted) return null;
+  if (!DEMO_MODE && !isConnected) {
     return (
       <EmptyState
         icon={<Shield className="w-12 h-12" />}
@@ -92,7 +97,7 @@ export default function Dashboard() {
             Protocol Dashboard
           </h1>
           <p className="text-sm text-[var(--muted)] mt-0.5">
-            <span className="font-mono text-xs">{address?.slice(0, 10)}…</span> · GenLayer Studionet
+            <span className="font-mono text-xs">{(DEMO_MODE ? DEMO_ADDRESS : address)?.slice(0, 10)}…</span> · {DEMO_MODE ? 'Demo Mode' : 'GenLayer Studionet'}
           </p>
         </div>
         <Link href="/app/agreements/new">

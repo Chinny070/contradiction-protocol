@@ -111,12 +111,15 @@ function MaterialityMeter({ level }: { level: 'LOW' | 'MEDIUM' | 'HIGH' }) {
 
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
+  const [mounted, setMounted] = useState(false);
   const [reveal, setReveal] = useState<RevealRecord | null>(null);
   const [verdict, setVerdict] = useState<ContradictionVerdict | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [reviewDone, setReviewDone] = useState(false);
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => {
+    if (!mounted) return;
     const all: RevealRecord[] = JSON.parse(localStorage.getItem('cp:reveals') || '[]');
     const found = all.find(r => r.id === id);
     if (found) {
@@ -126,7 +129,9 @@ export default function ReviewPage() {
         setReviewDone(true);
       }
     }
-  }, [id]);
+  }, [id, mounted]);
+
+  if (!mounted) return null;
 
   async function runReview() {
     if (!reveal) return;

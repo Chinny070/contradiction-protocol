@@ -33,6 +33,7 @@ export default function RevealPage() {
   // works without MetaMask in local demo mode.
   const address = walletAddress ?? DEMO_ADDRESS;
 
+  const [mounted, setMounted] = useState(false);
   const [assumptions, setAssumptions] = useState<PrivateAssumption[]>([]);
   const [selected, setSelected] = useState<PrivateAssumption | null>(null);
   const [commitmentOk, setCommitmentOk] = useState<boolean | null>(null);
@@ -41,9 +42,11 @@ export default function RevealPage() {
   const [step, setStep] = useState<'select' | 'evidence' | 'preview' | 'submit'>('select');
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => {
+    if (!mounted) return;
     getAssumptionsForAgreement(id as string).then(setAssumptions);
-  }, [id]);
+  }, [id, mounted]);
 
   const selectAssumption = (a: PrivateAssumption) => {
     setSelected(a);
@@ -83,6 +86,7 @@ export default function RevealPage() {
     }
   }
 
+  if (!mounted) return null;
   if (assumptions.length === 0) {
     return (
       <EmptyState

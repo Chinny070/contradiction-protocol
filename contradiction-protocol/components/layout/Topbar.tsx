@@ -4,7 +4,8 @@ import { injected } from 'wagmi/connectors';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { genlayerStudionet } from '@/lib/genlayer/chains';
-import { Wallet, Unplug, AlertTriangle } from 'lucide-react';
+import { DEMO_MODE, DEMO_ADDRESS } from '@/lib/config/demo';
+import { Wallet, Unplug, AlertTriangle, FlaskConical } from 'lucide-react';
 
 function short(addr: string) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -23,43 +24,53 @@ export function Topbar({ title }: { title?: string }) {
       <div className="text-sm font-semibold text-[var(--text)]">{title || 'Contradiction Protocol'}</div>
 
       <div className="flex items-center gap-2">
-        {wrongNetwork && (
-          <button
-            onClick={() => switchChain({ chainId: genlayerStudionet.id })}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#f5dcd9] text-[var(--danger)] text-xs font-medium"
-          >
-            <AlertTriangle className="w-3 h-3" />
-            Wrong Network — Switch
-          </button>
-        )}
-
-        {isConnected && !wrongNetwork && (
-          <Badge variant="success">
-            <span className="w-1.5 h-1.5 rounded-full bg-current" />
-            GenLayer Studionet
-          </Badge>
-        )}
-
-        {isConnected ? (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--muted)] font-mono">{short(address!)}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => disconnect()}
-            >
-              <Unplug className="w-3 h-3" />
-            </Button>
-          </div>
+        {DEMO_MODE ? (
+          // Demo mode — no wallet probing, no Connect button
+          <>
+            <Badge variant="muted">
+              <FlaskConical className="w-3 h-3" />
+              Demo
+            </Badge>
+            <span className="text-xs text-[var(--muted)] font-mono">{short(DEMO_ADDRESS)}</span>
+          </>
         ) : (
-          <Button
-            size="sm"
-            loading={isPending}
-            onClick={() => connect({ connector: injected() })}
-          >
-            <Wallet className="w-3.5 h-3.5" />
-            Connect Wallet
-          </Button>
+          // Live mode — full wallet UI unchanged
+          <>
+            {wrongNetwork && (
+              <button
+                onClick={() => switchChain({ chainId: genlayerStudionet.id })}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#f5dcd9] text-[var(--danger)] text-xs font-medium"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                Wrong Network — Switch
+              </button>
+            )}
+
+            {isConnected && !wrongNetwork && (
+              <Badge variant="success">
+                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                GenLayer Studionet
+              </Badge>
+            )}
+
+            {isConnected ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[var(--muted)] font-mono">{short(address!)}</span>
+                <Button variant="ghost" size="sm" onClick={() => disconnect()}>
+                  <Unplug className="w-3 h-3" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                loading={isPending}
+                onClick={() => connect({ connector: injected() })}
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                Connect Wallet
+              </Button>
+            )}
+          </>
         )}
       </div>
     </header>

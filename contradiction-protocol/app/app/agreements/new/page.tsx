@@ -16,6 +16,7 @@ import { normaliseAssumption } from '@/lib/commitments/normalise';
 import { saveAssumption } from '@/lib/vault/localVault';
 import { Plus, Trash2, Lock, Eye, Hash, AlertTriangle, CheckCircle, Shield } from 'lucide-react';
 import type { PrivateAssumption, AssumptionCategory, ResolutionAction } from '@/types';
+import { DEMO_MODE, DEMO_ADDRESS } from '@/lib/config/demo';
 
 const CATEGORIES: { value: AssumptionCategory; label: string }[] = [
   { value: 'MARKET_PRICE', label: 'Market Price' },
@@ -62,12 +63,9 @@ function emptyDraft(): AssumptionDraft {
 type Step = 'parties' | 'summary' | 'assumptions' | 'preview' | 'submit';
 const STEPS: Step[] = ['parties', 'summary', 'assumptions', 'preview', 'submit'];
 
-const DEMO_ADDRESS = '0xdemo0000000000000000000000000000000000';
-
 export default function NewAgreementPage() {
-  const { isConnected, address: walletAddress } = useAccount();
-  // Fall back to demo address so submit works without MetaMask in local demo mode.
-  const address = walletAddress ?? DEMO_ADDRESS;
+  const { address: walletAddress } = useAccount();
+  const address = walletAddress ?? (DEMO_MODE ? DEMO_ADDRESS : '');
   const router = useRouter();
 
   const [step, setStep] = useState<Step>('parties');
@@ -148,7 +146,7 @@ export default function NewAgreementPage() {
       }
 
       const root = createAssumptionsRoot(saltsMap.map(s => s.commitment));
-      const agrRoot = createAgreementRoot(summary, address!, counterparty, root);
+      const agrRoot = createAgreementRoot(summary, address, counterparty, root);
 
       // TODO: call GenLayer contract create_agreement here
       // For now store in localStorage as demo
