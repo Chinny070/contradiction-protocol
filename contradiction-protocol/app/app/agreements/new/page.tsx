@@ -62,8 +62,12 @@ function emptyDraft(): AssumptionDraft {
 type Step = 'parties' | 'summary' | 'assumptions' | 'preview' | 'submit';
 const STEPS: Step[] = ['parties', 'summary', 'assumptions', 'preview', 'submit'];
 
+const DEMO_ADDRESS = '0xdemo0000000000000000000000000000000000';
+
 export default function NewAgreementPage() {
-  const { isConnected, address } = useAccount();
+  const { isConnected, address: walletAddress } = useAccount();
+  // Fall back to demo address so submit works without MetaMask in local demo mode.
+  const address = walletAddress ?? DEMO_ADDRESS;
   const router = useRouter();
 
   const [step, setStep] = useState<Step>('parties');
@@ -178,16 +182,6 @@ export default function NewAgreementPage() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (!isConnected) {
-    return (
-      <EmptyState
-        icon={<Shield className="w-12 h-12" />}
-        title="Connect your wallet first"
-        description="You need a connected wallet to create an agreement."
-      />
-    );
   }
 
   return (
