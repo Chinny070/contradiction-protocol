@@ -23,10 +23,15 @@ const ACTIONS: { value: ResolutionAction; label: string }[] = [
 
 type EvidenceEntry = { title: string; type: string; url: string; summary: string };
 
+const DEMO_ADDRESS = '0xdemo0000000000000000000000000000000000';
+
 export default function RevealPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { address } = useAccount();
+  const { address: walletAddress } = useAccount();
+  // Use wallet address if connected, fall back to demo address so the flow
+  // works without MetaMask in local demo mode.
+  const address = walletAddress ?? DEMO_ADDRESS;
 
   const [assumptions, setAssumptions] = useState<PrivateAssumption[]>([]);
   const [selected, setSelected] = useState<PrivateAssumption | null>(null);
@@ -52,7 +57,7 @@ export default function RevealPage() {
     setEvidence(e => e.map((ev, idx) => idx === i ? { ...ev, [field]: val } : ev));
 
   async function handleSubmit() {
-    if (!selected || !address) return;
+    if (!selected) return;
     setSubmitting(true);
     try {
       const revealId = `rev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

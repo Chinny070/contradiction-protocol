@@ -118,6 +118,7 @@ export default function NewAgreementPage() {
       const agreementId = `agr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       const saltsMap: { salt: string; commitment: string }[] = [];
+      const vaultSaves: Promise<void>[] = [];
       for (let i = 0; i < assumptions.length; i++) {
         const a = assumptions[i];
         const salt = generateSalt();
@@ -136,7 +137,9 @@ export default function NewAgreementPage() {
           salt,
           commitment,
         };
-        await saveAssumption(localAssumption);
+        // Fire vault save without blocking — IndexedDB can stall, don't let it
+        // hold up navigation. The save completes in the background.
+        vaultSaves.push(saveAssumption(localAssumption));
         saltsMap.push({ salt, commitment });
       }
 
@@ -161,7 +164,14 @@ export default function NewAgreementPage() {
       const existing = JSON.parse(localStorage.getItem('cp:agreements') || '[]');
       localStorage.setItem('cp:agreements', JSON.stringify([...existing, record]));
 
+      // Navigate immediately — vault saves finish in background
       router.push(`/app/agreements/${agreementId}`);
+      // Log vault errors silently after navigation
+      Promise.allSettled(vaultSaves).then(results => {
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') console.warn(`Vault save ${i} failed:`, r.reason);
+        });
+      });
     } catch (e) {
       setError(String(e));
       submitGuard.current = false; // allow retry on error

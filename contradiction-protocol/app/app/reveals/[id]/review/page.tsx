@@ -156,6 +156,12 @@ export default function ReviewPage() {
 
   return (
     <div className="max-w-5xl mx-auto slide-up space-y-5">
+      {/* Demo mode notice — remove when real GenLayer Studionet is connected */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--verdict-gold)] bg-[#f5e9c8] text-xs text-[var(--verdict-gold)] font-medium">
+        <Cpu className="w-3.5 h-3.5 flex-shrink-0" />
+        Demo mode: simulated GenLayer review — connect Studionet on port 4000 for live AI-consensus verdicts
+      </div>
+
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ fontFamily: 'var(--font-space), sans-serif' }}>
