@@ -7,14 +7,31 @@ type EthProvider = NonNullable<NonNullable<Parameters<typeof createClient>[0]>['
 const RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
 
 async function getClient() {
-  if (typeof window === 'undefined') return null;
-  if (!CONTRACT_ADDRESS || CONTRACT_ADDRESS.length !== 42) return null;
+  if (typeof window === 'undefined') {
+    console.error('[GenLayer] Cannot run server-side');
+    return null;
+  }
+  if (!CONTRACT_ADDRESS) {
+    console.error('[GenLayer] CONTRACT_ADDRESS not set — check NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS env var');
+    return null;
+  }
+  if (CONTRACT_ADDRESS.length !== 42) {
+    console.error('[GenLayer] CONTRACT_ADDRESS invalid length:', CONTRACT_ADDRESS.length, CONTRACT_ADDRESS);
+    return null;
+  }
   const provider = (window as unknown as { ethereum?: EthProvider }).ethereum;
-  if (!provider) return null;
+  if (!provider) {
+    console.error('[GenLayer] No window.ethereum — is MetaMask installed?');
+    return null;
+  }
 
-  // Request accounts from MetaMask — triggers the popup if not yet connected
+  console.log('[GenLayer] Requesting accounts from MetaMask...');
   const accounts: string[] = await provider.request({ method: 'eth_requestAccounts', params: [] });
-  if (!accounts?.length) return null;
+  if (!accounts?.length) {
+    console.error('[GenLayer] MetaMask returned no accounts');
+    return null;
+  }
+  console.log('[GenLayer] Using account:', accounts[0], 'RPC:', RPC);
 
   return createClient({
     chain: studionet,
@@ -25,20 +42,20 @@ async function getClient() {
 }
 
 async function write(functionName: string, args: unknown[]): Promise<string | null> {
+  console.log(`[GenLayer] writeContract: ${functionName}`, args);
   const client = await getClient();
-  if (!client) return null;
-  try {
-    const hash = await client.writeContract({
-      address: CONTRACT_ADDRESS! as `0x${string}`,
-      functionName,
-      args: args as Parameters<typeof client.writeContract>[0]['args'],
-      value: BigInt(0),
-    });
-    return hash as string;
-  } catch (e) {
-    console.warn(`GenLayer ${functionName} failed:`, e);
+  if (!client) {
+    console.error(`[GenLayer] No client — ${functionName} aborted`);
     return null;
   }
+  const hash = await client.writeContract({
+    address: CONTRACT_ADDRESS! as `0x${string}`,
+    functionName,
+    args: args as Parameters<typeof client.writeContract>[0]['args'],
+    value: BigInt(0),
+  });
+  console.log(`[GenLayer] ${functionName} tx hash:`, hash);
+  return hash as string;
 }
 
 export async function glCreateAgreement(params: {

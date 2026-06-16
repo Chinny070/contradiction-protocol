@@ -115,10 +115,13 @@ export default function ReviewPage() {
   async function runReview() {
     if (!reveal) return;
     setReviewing(true);
-    // Fire GenLayer call (no-op in demo mode)
-    glReviewContradiction(id as string).catch(e => console.warn('GenLayer review_contradiction skipped:', e));
-    // Simulate validator consensus delay
-    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const txHash = await glReviewContradiction(id as string);
+      if (txHash) console.log('[Review] review_contradiction tx:', txHash);
+      else console.warn('[Review] glReviewContradiction returned null');
+    } catch (e) {
+      console.warn('[Review] review_contradiction failed:', e);
+    }
     const v = buildVerdictFromReveal(reveal);
     setVerdict(v);
     setReviewDone(true);
@@ -139,10 +142,13 @@ export default function ReviewPage() {
       };
       await updateRevealResponse(id as string, response);
 
-      // Fire GenLayer respond_to_reveal (no-op in demo mode)
-      glRespondToReveal({ revealId: id as string, response }).catch(e =>
-        console.warn('GenLayer respond_to_reveal skipped:', e)
-      );
+      try {
+        const txHash = await glRespondToReveal({ revealId: id as string, response });
+        if (txHash) console.log('[Review] respond_to_reveal tx:', txHash);
+        else console.warn('[Review] glRespondToReveal returned null');
+      } catch (e) {
+        console.warn('[Review] respond_to_reveal failed:', e);
+      }
 
       setReveal(prev => prev ? { ...prev, counterpartyResponse: response, status: 'UNDER_REVIEW' } : prev);
       setResponseSubmitted(true);
@@ -166,7 +172,7 @@ export default function ReviewPage() {
       {/* Demo notice */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--verdict-gold)] bg-[#f5e9c8] text-xs text-[var(--verdict-gold)] font-medium">
         <Cpu className="w-3.5 h-3.5 flex-shrink-0" />
-        Demo mode: simulated GenLayer review — connect Studionet on port 4000 for live AI-consensus verdicts
+        GenLayer review — connect MetaMask to GenLayer Studionet for on-chain AI-consensus verdicts
       </div>
 
       <div className="flex items-start justify-between">
