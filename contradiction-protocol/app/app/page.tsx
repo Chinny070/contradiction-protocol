@@ -12,14 +12,10 @@ import {
   Shield, Plus, ArrowRight, Activity
 } from 'lucide-react';
 import { fromNow } from '@/lib/utils/dates';
-
-type AgreementRecord = {
-  id: string; title: string; status: string; createdAt: number;
-};
-type RevealRecord = {
-  id: string; agreementId: string; status: string; createdAt: number;
-  verdictJson: { recommendedAction: string; materiality: string } | null;
-};
+import { getAllAgreements } from '@/lib/firebase/agreements';
+import { getAllReveals } from '@/lib/firebase/reveals';
+import type { AgreementRecord } from '@/lib/firebase/agreements';
+import type { RevealRecord } from '@/lib/firebase/reveals';
 
 type FeedEntry = {
   type: string; label: string; href: string; time: string; status: string;
@@ -51,7 +47,7 @@ function buildFeed(agreements: AgreementRecord[], reveals: RevealRecord[]): Feed
     });
   }
 
-  return entries.sort((a, b) => 0); // localStorage order is insertion order (newest last), reverse below
+  return entries.sort((a, b) => 0);
 }
 
 const typeIcon: Record<string, React.ReactNode> = {
@@ -66,12 +62,20 @@ export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   const [agreements, setAgreements] = useState<AgreementRecord[]>([]);
   const [reveals, setReveals] = useState<RevealRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
     if (!mounted) return;
-    setAgreements(JSON.parse(localStorage.getItem('cp:agreements') || '[]'));
-    setReveals(JSON.parse(localStorage.getItem('cp:reveals') || '[]'));
+    setLoading(true);
+    Promise.all([getAllAgreements(), getAllReveals()])
+      .then(([agrs, revs]) => {
+        setAgreements(agrs);
+        setReveals(revs);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, [mounted]);
 
   if (!mounted) return null;
@@ -142,7 +146,9 @@ export default function Dashboard() {
               <Badge variant="muted" className="ml-auto text-[10px]">{agreements.length + reveals.length} events</Badge>
             </div>
             <div className="divide-y divide-[var(--border)]">
-              {buildFeed(agreements, reveals).reverse().map((entry, i) => (
+              {loading ? (
+                <div className="px-4 py-8 text-center text-sm text-[var(--muted)]">Loading…</div>
+              ) : buildFeed(agreements, reveals).reverse().map((entry, i) => (
                 <Link key={i} href={entry.href} className="px-4 py-3 flex items-center gap-3 hover:bg-[var(--primary-soft)] transition-colors">
                   <div
                     className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
@@ -160,7 +166,7 @@ export default function Dashboard() {
                   </div>
                 </Link>
               ))}
-              {agreements.length === 0 && reveals.length === 0 && (
+              {!loading && agreements.length === 0 && reveals.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-[var(--muted)]">
                   No activity yet. Create your first agreement to get started.
                 </div>

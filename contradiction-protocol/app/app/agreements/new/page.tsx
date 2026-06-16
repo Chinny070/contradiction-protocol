@@ -17,6 +17,8 @@ import { saveAssumption } from '@/lib/vault/localVault';
 import { Plus, Trash2, Lock, Eye, Hash, AlertTriangle, CheckCircle, Shield } from 'lucide-react';
 import type { PrivateAssumption, AssumptionCategory, ResolutionAction } from '@/types';
 import { DEMO_MODE, DEMO_ADDRESS } from '@/lib/config/demo';
+import { saveAgreement } from '@/lib/firebase/agreements';
+import { glCreateAgreement } from '@/lib/genlayer/writes';
 
 const CATEGORIES: { value: AssumptionCategory; label: string }[] = [
   { value: 'MARKET_PRICE', label: 'Market Price' },
@@ -149,7 +151,6 @@ export default function NewAgreementPage() {
       const agrRoot = createAgreementRoot(summary, address, counterparty, root);
 
       // TODO: call GenLayer contract create_agreement here
-      // For now store in localStorage as demo
       const record = {
         id: agreementId,
         title,
@@ -163,17 +164,32 @@ export default function NewAgreementPage() {
         createdAt: Date.now(),
         commitments: saltsMap.map(s => s.commitment),
       };
-      const existing = JSON.parse(localStorage.getItem('cp:agreements') || '[]');
-      localStorage.setItem('cp:agreements', JSON.stringify([...existing, record]));
-
-      // Navigate immediately — vault saves finish in background
-      router.push(`/app/agreements/${agreementId}`);
-      // Log vault errors silently after navigation
-      Promise.allSettled(vaultSaves).then(results => {
+      // Wait for vault saves before navigating — reveal page reads from IndexedDB immediately
+      await Promise.allSettled(vaultSaves).then(results => {
         results.forEach((r, i) => {
           if (r.status === 'rejected') console.warn(`Vault save ${i} failed:`, r.reason);
         });
       });
+
+      await saveAgreement(record);
+      console.log('[NewAgreement] saved to Firestore, id:', agreementId);
+
+      // On-chain commit — awaited so MetaMask popup stays open for signing
+      try {
+        const txHash = await glCreateAgreement({
+          counterparty,
+          agreementSummary: summary,
+          agreementRoot: agrRoot,
+          assumptionsRoot: root,
+          commitments: saltsMap.map(s => s.commitment),
+        });
+        if (txHash) console.info('[NewAgreement] GenLayer tx:', txHash);
+        else console.warn('[NewAgreement] glCreateAgreement returned null — no wallet or contract not set');
+      } catch (e) {
+        console.warn('[NewAgreement] GenLayer create_agreement failed:', e);
+      }
+
+      router.push(`/app/agreements/${agreementId}`);
     } catch (e) {
       setError(String(e));
       submitGuard.current = false; // allow retry on error

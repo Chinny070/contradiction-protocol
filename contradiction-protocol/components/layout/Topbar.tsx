@@ -1,6 +1,6 @@
 'use client';
-import { useAccount, useConnect, useDisconnect, useChainId, useSwitchChain } from 'wagmi';
-import { injected } from 'wagmi/connectors';
+import { useEffect, useState } from 'react';
+import { useAccount, useConnect, useConnectors, useDisconnect, useChainId, useSwitchChain } from 'wagmi';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { genlayerStudionet } from '@/lib/genlayer/chains';
@@ -12,8 +12,12 @@ function short(addr: string) {
 }
 
 export function Topbar({ title }: { title?: string }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const { address, isConnected } = useAccount();
   const { connect, isPending } = useConnect();
+  const connectors = useConnectors();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
@@ -33,8 +37,8 @@ export function Topbar({ title }: { title?: string }) {
             </Badge>
             <span className="text-xs text-[var(--muted)] font-mono">{short(DEMO_ADDRESS)}</span>
           </>
-        ) : (
-          // Live mode — full wallet UI unchanged
+        ) : mounted ? (
+          // Live mode — only render wallet UI after hydration to avoid SSR mismatch
           <>
             {wrongNetwork && (
               <button
@@ -56,7 +60,7 @@ export function Topbar({ title }: { title?: string }) {
             {isConnected ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[var(--muted)] font-mono">{short(address!)}</span>
-                <Button variant="ghost" size="sm" onClick={() => disconnect()}>
+                <Button variant="ghost" size="sm" onClick={() => disconnect({ connector: connectors[0] })}>
                   <Unplug className="w-3 h-3" />
                 </Button>
               </div>
@@ -64,14 +68,14 @@ export function Topbar({ title }: { title?: string }) {
               <Button
                 size="sm"
                 loading={isPending}
-                onClick={() => connect({ connector: injected() })}
+                onClick={() => connect({ connector: connectors[0] })}
               >
                 <Wallet className="w-3.5 h-3.5" />
                 Connect Wallet
               </Button>
             )}
           </>
-        )}
+        ) : null}
       </div>
     </header>
   );

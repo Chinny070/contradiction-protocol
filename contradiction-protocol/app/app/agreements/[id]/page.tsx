@@ -7,36 +7,46 @@ import { Button } from '@/components/ui/Button';
 import { Badge, WaxSealBadge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { getAssumptionsForAgreement } from '@/lib/vault/localVault';
+import { getAgreement } from '@/lib/firebase/agreements';
+import { getRevealsForAgreement } from '@/lib/firebase/reveals';
+import type { AgreementRecord } from '@/lib/firebase/agreements';
+import type { RevealRecord } from '@/lib/firebase/reveals';
 import { fromNow, formatDateTime } from '@/lib/utils/dates';
-import { Lock, Unlock, Hash, Shield, ChevronRight, Eye } from 'lucide-react';
+import { Lock, Unlock, Hash, Shield, ChevronRight, Eye, ArrowRight } from 'lucide-react';
 import type { PrivateAssumption } from '@/types';
-
-type AgreementRecord = {
-  id: string;
-  title: string;
-  creator: string;
-  counterparty: string;
-  agreementSummary: string;
-  agreementRoot: string;
-  assumptionsRoot: string;
-  assumptionCount: number;
-  status: string;
-  createdAt: number;
-  commitments: string[];
-};
 
 export default function AgreementDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [agreement, setAgreement] = useState<AgreementRecord | null>(null);
+  const [reveals, setReveals] = useState<RevealRecord[]>([]);
   const [localAssumptions, setLocalAssumptions] = useState<PrivateAssumption[]>([]);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const all: AgreementRecord[] = JSON.parse(localStorage.getItem('cp:agreements') || '[]');
-    const found = all.find(a => a.id === id);
-    setAgreement(found || null);
-    getAssumptionsForAgreement(id as string).then(setLocalAssumptions);
+    console.log('[AgreementDetail] fetching id:', id);
+    Promise.allSettled([
+      getAgreement(id as string),
+      getRevealsForAgreement(id as string),
+      getAssumptionsForAgreement(id as string),
+    ]).then(([agrResult, revsResult, vaultResult]) => {
+      console.log('[AgreementDetail] agrResult:', agrResult);
+      if (agrResult.status === 'fulfilled') setAgreement(agrResult.value);
+      else console.error('[AgreementDetail] Failed to load agreement:', agrResult.reason);
+
+      if (revsResult.status === 'fulfilled') setReveals(revsResult.value);
+      else console.warn('[AgreementDetail] Failed to load reveals:', revsResult.reason);
+
+      if (vaultResult.status === 'fulfilled') setLocalAssumptions(vaultResult.value);
+      else console.warn('[AgreementDetail] Failed to load vault:', vaultResult.reason);
+
+      setLoading(false);
+    });
   }, [id]);
+
+  if (loading) {
+    return <div className="py-20 text-center text-sm text-[var(--muted)]">Loading agreement…</div>;
+  }
 
   if (!agreement) {
     return (
@@ -121,6 +131,54 @@ export default function AgreementDetailPage() {
               </div>
             ))}
           </Card>
+
+          {/* Reveals Feed */}
+          <Card className="overflow-hidden">
+            <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-2">
+              <Unlock className="w-3.5 h-3.5 text-[var(--accent)]" />
+              <span className="text-sm font-semibold">Reveals</span>
+              <Badge variant="muted" className="ml-auto">{reveals.length}</Badge>
+            </div>
+            {reveals.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-[var(--muted)]">
+                No reveals submitted yet.{' '}
+                <Link href={`/app/agreements/${id}/reveal`} className="underline text-[var(--accent)]">
+                  Reveal an assumption
+                </Link>{' '}
+                if reality has changed.
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--border)]">
+                {reveals.map(r => (
+                  <Link
+                    key={r.id}
+                    href={`/app/reveals/${r.id}/review`}
+                    className="px-4 py-3 flex items-center gap-3 hover:bg-[var(--primary-soft)] transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <WaxSealBadge status={r.verdictJson ? 'DECIDED' : r.status} />
+                        <span className="text-xs text-[var(--muted)]">{fromNow(r.createdAt)}</span>
+                      </div>
+                      <p className="text-xs text-[var(--text)] truncate">{r.revealedAssumptionText}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="accent">{r.requestedAction}</Badge>
+                        {r.verdictJson && (
+                          <Badge variant={
+                            r.verdictJson.recommendedAction === 'REJECT_CLAIM' ? 'danger' :
+                            r.verdictJson.materiality === 'HIGH' ? 'gold' : 'blue'
+                          }>
+                            {r.verdictJson.recommendedAction} / {r.verdictJson.materiality}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-[var(--muted)] flex-shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* Sidebar */}
@@ -150,6 +208,26 @@ export default function AgreementDetailPage() {
                   <div className="text-[10px] text-[var(--muted)]">{formatDateTime(agreement.createdAt)}</div>
                 </div>
               </div>
+              {reveals.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+                  <div>
+                    <div className="text-xs font-medium">Assumption Revealed</div>
+                    <div className="text-[10px] text-[var(--muted)]">{fromNow(reveals[0].createdAt)}</div>
+                  </div>
+                </div>
+              )}
+              {reveals.some(r => r.verdictJson) && (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[var(--verdict-gold)]" />
+                  <div>
+                    <div className="text-xs font-medium">Verdict Issued</div>
+                    <div className="text-[10px] text-[var(--muted)]">
+                      {reveals.find(r => r.verdictJson)?.verdictJson?.recommendedAction}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </Card>
 

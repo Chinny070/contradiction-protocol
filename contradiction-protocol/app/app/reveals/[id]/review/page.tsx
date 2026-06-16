@@ -1,81 +1,46 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+import { useAccount } from 'wagmi';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, WaxSealBadge } from '@/components/ui/Badge';
+import { Input, Textarea } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fromNow } from '@/lib/utils/dates';
-import { Eye, Cpu, CheckCircle, AlertTriangle, Loader2, Lock } from 'lucide-react';
+import { Eye, Cpu, CheckCircle, AlertTriangle, Loader2, Lock, MessageSquare, Plus, Trash2, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { getReveal, updateRevealVerdict, updateRevealResponse } from '@/lib/firebase/reveals';
+import { getAgreement } from '@/lib/firebase/agreements';
+import { glReviewContradiction, glRespondToReveal } from '@/lib/genlayer/writes';
+import type { RevealRecord, CounterpartyResponse } from '@/lib/firebase/reveals';
 import type { ContradictionVerdict } from '@/types';
-
-type RevealRecord = {
-  id: string;
-  agreementId: string;
-  assumptionCommitment: string;
-  revealedAssumptionText: string;
-  salt: string;
-  requestedAction: string;
-  status: string;
-  createdBy: string;
-  createdAt: number;
-  evidence: { title: string; type: string; url: string; summary: string }[];
-  verdictJson: ContradictionVerdict | null;
-};
+import { DEMO_MODE, DEMO_ADDRESS } from '@/lib/config/demo';
 
 function buildVerdictFromReveal(reveal: RevealRecord): ContradictionVerdict {
   const evidenceTitles = reveal.evidence.map(e => e.title).filter(Boolean).join(', ');
   const evidenceSummaries = reveal.evidence.map(e => e.summary).filter(Boolean).join(' ');
   const evidenceUrls = reveal.evidence.map(e => e.url).filter(Boolean).join(', ');
-
   const hasEvidence = reveal.evidence.length > 0 && reveal.evidence.some(e => e.summary);
   const evidenceQuality: ContradictionVerdict['evidenceQuality'] = hasEvidence
     ? reveal.evidence.length >= 2 ? 'STRONG' : 'MODERATE'
     : 'WEAK';
-
   const action = reveal.requestedAction as ContradictionVerdict['recommendedAction'];
-  const allowedActions = new Set([
-    'CONTINUE', 'PAUSE', 'RENEGOTIATE', 'SETTLE_PARTIAL',
-    'SETTLE_FULL', 'REJECT_CLAIM', 'INSUFFICIENT_EVIDENCE',
-  ]);
-  const recommendedAction: ContradictionVerdict['recommendedAction'] = allowedActions.has(action)
-    ? action
-    : 'RENEGOTIATE';
-
+  const allowed = new Set(['CONTINUE','PAUSE','RENEGOTIATE','SETTLE_PARTIAL','SETTLE_FULL','REJECT_CLAIM','INSUFFICIENT_EVIDENCE']);
+  const recommendedAction: ContradictionVerdict['recommendedAction'] = allowed.has(action) ? action : 'RENEGOTIATE';
   const materiality: ContradictionVerdict['materiality'] =
-    recommendedAction === 'CONTINUE' ? 'LOW'
-    : recommendedAction === 'PAUSE' ? 'MEDIUM'
-    : 'HIGH';
-
+    recommendedAction === 'CONTINUE' ? 'LOW' : recommendedAction === 'PAUSE' ? 'MEDIUM' : 'HIGH';
   const assumptionSnippet = reveal.revealedAssumptionText
     ? `"${reveal.revealedAssumptionText.slice(0, 120)}${reveal.revealedAssumptionText.length > 120 ? '…' : ''}"`
     : 'the revealed assumption';
-
   const evidenceLine = evidenceTitles
     ? `The submitted evidence (${evidenceTitles}) indicates: ${evidenceSummaries}`
-    : evidenceSummaries
-    ? `The submitted evidence indicates: ${evidenceSummaries}`
-    : 'No detailed evidence summary was provided.';
-
+    : evidenceSummaries ? `The submitted evidence indicates: ${evidenceSummaries}` : 'No detailed evidence summary was provided.';
   const urlLine = evidenceUrls ? ` Source: ${evidenceUrls}.` : '';
-
   const reasoning =
     `The revealed assumption ${assumptionSnippet} was verified against the original commitment. ` +
     `${evidenceLine}${urlLine} ` +
     `Based on this, the condition described in the assumption has materially changed, ` +
-    `which contradicts the original agreement terms. ` +
-    `The requested action is ${recommendedAction.replace(/_/g, ' ')}.`;
-
-  const followUpQuestions = hasEvidence
-    ? [
-        'Can the submitting party provide additional corroborating documentation?',
-        'Has the counterparty been notified of this condition change?',
-      ]
-    : [
-        'Additional evidence is required to support this claim.',
-        'Please provide verifiable sources for the stated condition change.',
-      ];
-
+    `which contradicts the original agreement terms. The requested action is ${recommendedAction.replace(/_/g, ' ')}.`;
   return {
     revealedClauseBelongs: true,
     conditionChanged: hasEvidence,
@@ -84,9 +49,10 @@ function buildVerdictFromReveal(reveal: RevealRecord): ContradictionVerdict {
     evidenceQuality,
     recommendedAction,
     reasoning,
-    followUpQuestions,
-    safetyCaveat:
-      'This is an AI-consensus interpretation based on the submitted evidence. It is not legal advice. Parties should seek independent legal counsel before acting on this verdict.',
+    followUpQuestions: hasEvidence
+      ? ['Can the submitting party provide additional corroborating documentation?', 'Has the counterparty been notified of this condition change?']
+      : ['Additional evidence is required to support this claim.', 'Please provide verifiable sources for the stated condition change.'],
+    safetyCaveat: 'This is an AI-consensus interpretation based on the submitted evidence. It is not legal advice. Parties should seek independent legal counsel before acting on this verdict.',
   };
 }
 
@@ -96,72 +62,108 @@ function MaterialityMeter({ level }: { level: 'LOW' | 'MEDIUM' | 'HIGH' }) {
   return (
     <div className="flex items-center gap-1.5">
       {[1, 2, 3].map(i => (
-        <div
-          key={i}
-          className="h-2 flex-1 rounded-full"
-          style={{
-            background: i <= levels[level] ? colors[level] : 'var(--border)',
-          }}
-        />
+        <div key={i} className="h-2 flex-1 rounded-full" style={{ background: i <= levels[level] ? colors[level] : 'var(--border)' }} />
       ))}
       <span className="text-xs font-mono ml-1" style={{ color: colors[level] }}>{level}</span>
     </div>
   );
 }
 
+type CounterEvidenceEntry = { title: string; type: string; url: string; summary: string };
+
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
+  const { address: walletAddress } = useAccount();
+  const address = walletAddress ?? (DEMO_MODE ? DEMO_ADDRESS : '');
+
   const [mounted, setMounted] = useState(false);
   const [reveal, setReveal] = useState<RevealRecord | null>(null);
+  const [counterparty, setCounterparty] = useState('');
   const [verdict, setVerdict] = useState<ContradictionVerdict | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [reviewDone, setReviewDone] = useState(false);
 
+  // Counterparty response state
+  const [showResponseForm, setShowResponseForm] = useState(false);
+  const [responseAgrees, setResponseAgrees] = useState<boolean | null>(null);
+  const [responseStatement, setResponseStatement] = useState('');
+  const [counterEvidence, setCounterEvidence] = useState<CounterEvidenceEntry[]>([{ title: '', type: 'URL', url: '', summary: '' }]);
+  const [submittingResponse, setSubmittingResponse] = useState(false);
+  const [responseSubmitted, setResponseSubmitted] = useState(false);
+
   useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
     if (!mounted) return;
-    const all: RevealRecord[] = JSON.parse(localStorage.getItem('cp:reveals') || '[]');
-    const found = all.find(r => r.id === id);
-    if (found) {
-      setReveal(found);
-      if (found.verdictJson) {
-        setVerdict(found.verdictJson);
-        setReviewDone(true);
+    getReveal(id as string).then(async found => {
+      if (found) {
+        setReveal(found);
+        if (found.verdictJson) { setVerdict(found.verdictJson); setReviewDone(true); }
+        if (found.counterpartyResponse) setResponseSubmitted(true);
+        // Fetch counterparty address from agreement
+        const agr = await getAgreement(found.agreementId);
+        if (agr) setCounterparty(agr.counterparty);
       }
-    }
+    });
   }, [id, mounted]);
 
   if (!mounted) return null;
 
+  const isCounterparty = address && counterparty && address.toLowerCase() === counterparty.toLowerCase();
+  const isCreator = reveal && address && address.toLowerCase() === reveal.createdBy.toLowerCase();
+
   async function runReview() {
     if (!reveal) return;
     setReviewing(true);
-    // Simulate GenLayer validator consensus delay
+    // Fire GenLayer call (no-op in demo mode)
+    glReviewContradiction(id as string).catch(e => console.warn('GenLayer review_contradiction skipped:', e));
+    // Simulate validator consensus delay
     await new Promise(r => setTimeout(r, 3000));
     const v = buildVerdictFromReveal(reveal);
     setVerdict(v);
     setReviewDone(true);
-
-    // Persist verdict so re-opening the page shows the same result
-    const all: RevealRecord[] = JSON.parse(localStorage.getItem('cp:reveals') || '[]');
-    const updated = all.map(r => r.id === id ? { ...r, verdictJson: v, status: 'DECIDED' } : r);
-    localStorage.setItem('cp:reveals', JSON.stringify(updated));
+    await updateRevealVerdict(id as string, v, 'DECIDED');
     setReviewing(false);
   }
 
+  async function submitResponse() {
+    if (!reveal || responseAgrees === null || !responseStatement.trim()) return;
+    setSubmittingResponse(true);
+    try {
+      const response: CounterpartyResponse = {
+        statement: responseStatement,
+        agrees: responseAgrees,
+        counterEvidence: counterEvidence.filter(e => e.title || e.summary),
+        submittedBy: address,
+        submittedAt: Date.now(),
+      };
+      await updateRevealResponse(id as string, response);
+
+      // Fire GenLayer respond_to_reveal (no-op in demo mode)
+      glRespondToReveal({ revealId: id as string, response }).catch(e =>
+        console.warn('GenLayer respond_to_reveal skipped:', e)
+      );
+
+      setReveal(prev => prev ? { ...prev, counterpartyResponse: response, status: 'UNDER_REVIEW' } : prev);
+      setResponseSubmitted(true);
+      setShowResponseForm(false);
+    } finally {
+      setSubmittingResponse(false);
+    }
+  }
+
+  const addCounterEvidence = () => setCounterEvidence(e => [...e, { title: '', type: 'URL', url: '', summary: '' }]);
+  const removeCounterEvidence = (i: number) => setCounterEvidence(e => e.filter((_, idx) => idx !== i));
+  const updateCounterEvidence = (i: number, field: keyof CounterEvidenceEntry, val: string) =>
+    setCounterEvidence(e => e.map((ev, idx) => idx === i ? { ...ev, [field]: val } : ev));
+
   if (!reveal) {
-    return (
-      <EmptyState
-        icon={<Eye className="w-12 h-12" />}
-        title="Reveal not found"
-        description="This reveal record could not be located."
-      />
-    );
+    return <EmptyState icon={<Eye className="w-12 h-12" />} title="Reveal not found" description="This reveal record could not be located." />;
   }
 
   return (
     <div className="max-w-5xl mx-auto slide-up space-y-5">
-      {/* Demo mode notice — remove when real GenLayer Studionet is connected */}
+      {/* Demo notice */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--verdict-gold)] bg-[#f5e9c8] text-xs text-[var(--verdict-gold)] font-medium">
         <Cpu className="w-3.5 h-3.5 flex-shrink-0" />
         Demo mode: simulated GenLayer review — connect Studionet on port 4000 for live AI-consensus verdicts
@@ -203,6 +205,127 @@ export default function ReviewPage() {
               <Badge variant="accent">{reveal.requestedAction}</Badge>
             </div>
           </Card>
+
+          {/* Counterparty response section */}
+          <Card className="overflow-hidden">
+            <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-2">
+              <MessageSquare className="w-3.5 h-3.5 text-[var(--evidence-blue)]" />
+              <h3 className="text-sm font-semibold">Counterparty Response</h3>
+            </div>
+
+            {responseSubmitted && reveal.counterpartyResponse ? (
+              <div className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  {reveal.counterpartyResponse.agrees
+                    ? <><ThumbsUp className="w-4 h-4 text-green-600" /><Badge variant="success">Agrees with claim</Badge></>
+                    : <><ThumbsDown className="w-4 h-4 text-[var(--danger)]" /><Badge variant="danger">Disputes claim</Badge></>
+                  }
+                </div>
+                <p className="text-sm text-[var(--text)] leading-relaxed">{reveal.counterpartyResponse.statement}</p>
+                {reveal.counterpartyResponse.counterEvidence.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-[var(--muted)]">Counter-evidence</div>
+                    {reveal.counterpartyResponse.counterEvidence.map((ev, i) => (
+                      <div key={i} className="p-2 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Badge variant="blue">{ev.type}</Badge>
+                          <span className="text-xs font-medium">{ev.title}</span>
+                        </div>
+                        <p className="text-xs text-[var(--muted)]">{ev.summary}</p>
+                        {ev.url && <div className="text-xs text-[var(--evidence-blue)] mt-0.5 break-all">{ev.url}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="text-[10px] text-[var(--muted)]">
+                  Submitted {fromNow(reveal.counterpartyResponse.submittedAt)} by counterparty
+                </div>
+              </div>
+            ) : isCounterparty && !responseSubmitted ? (
+              <div className="p-4">
+                {!showResponseForm ? (
+                  <div className="text-center">
+                    <p className="text-xs text-[var(--muted)] mb-3">
+                      You are the counterparty. You can respond to this reveal with your position and any counter-evidence.
+                    </p>
+                    <Button variant="secondary" size="sm" onClick={() => setShowResponseForm(true)}>
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Submit Response
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-xs font-medium text-[var(--text)] mb-2">Your position</div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setResponseAgrees(true)}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-medium transition-colors ${responseAgrees === true ? 'border-green-400 bg-green-50 text-green-700' : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--primary-soft)]'}`}
+                        >
+                          <ThumbsUp className="w-3.5 h-3.5" /> Agree with claim
+                        </button>
+                        <button
+                          onClick={() => setResponseAgrees(false)}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-medium transition-colors ${responseAgrees === false ? 'border-[var(--danger)] bg-[#f5dcd9] text-[var(--danger)]' : 'border-[var(--border)] text-[var(--muted)] hover:bg-[var(--primary-soft)]'}`}
+                        >
+                          <ThumbsDown className="w-3.5 h-3.5" /> Dispute claim
+                        </button>
+                      </div>
+                    </div>
+
+                    <Textarea
+                      label="Your statement"
+                      placeholder="Provide your perspective on whether the revealed assumption has been contradicted…"
+                      value={responseStatement}
+                      onChange={e => setResponseStatement(e.target.value)}
+                      rows={3}
+                    />
+
+                    <div>
+                      <div className="text-xs font-medium text-[var(--text)] mb-2">Counter-evidence (optional)</div>
+                      {counterEvidence.map((ev, i) => (
+                        <div key={i} className="p-3 rounded-lg border border-[var(--border)] space-y-2 mb-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-[var(--muted)]">Item {i + 1}</span>
+                            {counterEvidence.length > 1 && (
+                              <button onClick={() => removeCounterEvidence(i)}>
+                                <Trash2 className="w-3 h-3 text-[var(--muted)]" />
+                              </button>
+                            )}
+                          </div>
+                          <Input label="Title" placeholder="Counter-evidence title" value={ev.title} onChange={e => updateCounterEvidence(i, 'title', e.target.value)} />
+                          <Input label="URL (optional)" placeholder="https://…" value={ev.url} onChange={e => updateCounterEvidence(i, 'url', e.target.value)} />
+                          <Textarea label="Summary" placeholder="What this evidence shows…" value={ev.summary} onChange={e => updateCounterEvidence(i, 'summary', e.target.value)} rows={2} />
+                        </div>
+                      ))}
+                      <button onClick={addCounterEvidence} className="flex items-center gap-1.5 text-xs text-[var(--muted)] hover:text-[var(--text)]">
+                        <Plus className="w-3 h-3" /> Add counter-evidence
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button variant="secondary" size="sm" onClick={() => setShowResponseForm(false)}>Cancel</Button>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        loading={submittingResponse}
+                        onClick={submitResponse}
+                        disabled={responseAgrees === null || !responseStatement.trim()}
+                      >
+                        Submit Response
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted)]">
+                {isCreator
+                  ? 'Waiting for counterparty response.'
+                  : 'No counterparty response yet.'}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* Evidence Stack */}
@@ -218,12 +341,13 @@ export default function ReviewPage() {
                 <Badge variant="blue">{ev.type}</Badge>
                 <span className="text-xs font-medium">{ev.title}</span>
               </div>
-              {ev.url && (
-                <div className="text-xs text-[var(--evidence-blue)] break-all mb-1">{ev.url}</div>
-              )}
+              {ev.url && <div className="text-xs text-[var(--evidence-blue)] break-all mb-1">{ev.url}</div>}
               <p className="text-xs text-[var(--muted)] leading-relaxed">{ev.summary}</p>
             </Card>
           ))}
+          {reveal.evidence.length === 0 && (
+            <div className="text-xs text-[var(--muted)] text-center py-4">No evidence submitted.</div>
+          )}
         </div>
 
         {/* GenLayer Verdict */}
@@ -255,49 +379,37 @@ export default function ReviewPage() {
               </div>
               <div className="p-4 space-y-3">
                 {[
-                  { label: 'Clause belongs', value: verdict.revealedClauseBelongs, bool: true },
-                  { label: 'Condition changed', value: verdict.conditionChanged, bool: true },
-                  { label: 'Contradiction found', value: verdict.contradictionFound, bool: true },
+                  { label: 'Clause belongs', value: verdict.revealedClauseBelongs },
+                  { label: 'Condition changed', value: verdict.conditionChanged },
+                  { label: 'Contradiction found', value: verdict.contradictionFound },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between">
                     <span className="text-xs text-[var(--muted)]">{row.label}</span>
-                    {row.bool ? (
-                      row.value
-                        ? <CheckCircle className="w-4 h-4 text-green-600" />
-                        : <AlertTriangle className="w-4 h-4 text-[var(--danger)]" />
-                    ) : (
-                      <span className="text-xs font-mono">{String(row.value)}</span>
-                    )}
+                    {row.value
+                      ? <CheckCircle className="w-4 h-4 text-green-600" />
+                      : <AlertTriangle className="w-4 h-4 text-[var(--danger)]" />
+                    }
                   </div>
                 ))}
-
                 <div>
                   <div className="text-xs text-[var(--muted)] mb-1">Materiality</div>
                   <MaterialityMeter level={verdict.materiality} />
                 </div>
-
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-[var(--muted)]">Evidence quality</span>
                   <Badge variant={verdict.evidenceQuality === 'STRONG' ? 'success' : verdict.evidenceQuality === 'MODERATE' ? 'gold' : 'danger'}>
                     {verdict.evidenceQuality}
                   </Badge>
                 </div>
-
                 <div className="border-t border-[var(--border)] pt-3">
                   <div className="text-xs text-[var(--muted)] mb-1">Recommended action</div>
-                  <Badge variant="gold" className="text-sm px-3 py-1">
-                    {verdict.recommendedAction}
-                  </Badge>
+                  <Badge variant="gold" className="text-sm px-3 py-1">{verdict.recommendedAction}</Badge>
                 </div>
               </div>
-
-              {/* Reasoning */}
               <div className="border-t border-[var(--border)] px-4 py-3">
                 <div className="text-xs text-[var(--muted)] mb-1.5 font-semibold">Reasoning</div>
                 <p className="text-xs text-[var(--text)] leading-relaxed">{verdict.reasoning}</p>
               </div>
-
-              {/* Follow-up questions */}
               {verdict.followUpQuestions.length > 0 && (
                 <div className="border-t border-[var(--border)] px-4 py-3">
                   <div className="text-xs text-[var(--muted)] mb-1.5 font-semibold">Follow-up Questions</div>
@@ -310,8 +422,6 @@ export default function ReviewPage() {
                   </ul>
                 </div>
               )}
-
-              {/* Safety caveat */}
               <div className="border-t border-[var(--border)] px-4 py-3 bg-[var(--bg)]">
                 <p className="text-[10px] text-[var(--muted)] leading-relaxed">{verdict.safetyCaveat}</p>
               </div>
@@ -328,7 +438,7 @@ export default function ReviewPage() {
         </div>
       </div>
 
-      {/* Verdict console */}
+      {/* Verdict JSON console */}
       {verdict && !reviewing && (
         <Card variant="console" className="p-4">
           <div className="text-[10px] text-[var(--muted)] mb-2 font-mono">GENLAYER VERDICT JSON</div>

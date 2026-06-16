@@ -11,6 +11,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { getAssumptionsForAgreement } from '@/lib/vault/localVault';
 import { verifyCommitment } from '@/lib/commitments/hash';
 import { Lock, Unlock, Eye, CheckCircle, XCircle, AlertTriangle, Shield, Plus, Trash2 } from 'lucide-react';
+import { saveReveal } from '@/lib/firebase/reveals';
+import { glSubmitReveal } from '@/lib/genlayer/writes';
 import type { PrivateAssumption, ResolutionAction } from '@/types';
 
 const ACTIONS: { value: ResolutionAction; label: string }[] = [
@@ -78,8 +80,24 @@ export default function RevealPage() {
         evidence,
         verdictJson: null,
       };
-      const existing = JSON.parse(localStorage.getItem('cp:reveals') || '[]');
-      localStorage.setItem('cp:reveals', JSON.stringify([...existing, reveal]));
+      await saveReveal(reveal);
+
+      // On-chain submit — awaited so MetaMask popup stays open for signing
+      try {
+        const hash = await glSubmitReveal({
+          agreementId: id as string,
+          commitment: selected.commitment,
+          revealedAssumption: selected.normalisedText,
+          salt: selected.salt,
+          evidence,
+          requestedAction,
+        });
+        if (hash) console.log('[RevealPage] submit_reveal tx:', hash);
+        else console.warn('[RevealPage] glSubmitReveal returned null — no wallet or contract not set');
+      } catch (e) {
+        console.warn('[RevealPage] submit_reveal failed:', e);
+      }
+
       router.push(`/app/reveals/${revealId}/review`);
     } finally {
       setSubmitting(false);

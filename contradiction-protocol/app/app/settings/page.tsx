@@ -1,6 +1,5 @@
 'use client';
-import { useAccount, useConnect, useDisconnect, useChainId, useSwitchChain } from 'wagmi';
-import { injected } from 'wagmi/connectors';
+import { useAccount, useConnect, useConnectors, useDisconnect, useChainId, useSwitchChain } from 'wagmi';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -10,6 +9,7 @@ import { Wallet, Network, Shield, AlertTriangle, CheckCircle } from 'lucide-reac
 export default function SettingsPage() {
   const { address, isConnected } = useAccount();
   const { connect, isPending } = useConnect();
+  const connectors = useConnectors();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
@@ -36,7 +36,7 @@ export default function SettingsPage() {
               <span className="text-xs text-[var(--muted)]">Connected address</span>
               <span className="font-mono text-xs">{address?.slice(0, 10)}…{address?.slice(-6)}</span>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => disconnect()}>
+            <Button variant="secondary" size="sm" onClick={() => disconnect({ connector: connectors[0] })}>
               Disconnect Wallet
             </Button>
           </div>
@@ -45,7 +45,7 @@ export default function SettingsPage() {
             <p className="text-xs text-[var(--muted)] mb-3">
               Connect an injected wallet (MetaMask or similar) to use the protocol.
             </p>
-            <Button loading={isPending} onClick={() => connect({ connector: injected() })}>
+            <Button loading={isPending} onClick={() => connect({ connector: connectors[0] })}>
               <Wallet className="w-3.5 h-3.5" />
               Connect Injected Wallet
             </Button>
