@@ -33,6 +33,30 @@ async function getClient() {
   }
   console.log('[GenLayer] Using account:', accounts[0], 'RPC:', RPC);
 
+  // Ensure MetaMask is on the correct chain (61999 = GenLayer Studionet)
+  const chainIdHex = '0xf22f';
+  try {
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: chainIdHex }] });
+  } catch (switchErr: unknown) {
+    const err = switchErr as { code?: number };
+    // 4902 = chain not added yet — add it
+    if (err.code === 4902) {
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: chainIdHex,
+          chainName: 'GenLayer Studionet',
+          nativeCurrency: { name: 'GEN Token', symbol: 'GEN', decimals: 18 },
+          rpcUrls: [RPC],
+          blockExplorerUrls: ['https://genlayer-explorer.vercel.app'],
+        }],
+      });
+    } else {
+      console.error('[GenLayer] Failed to switch chain:', switchErr);
+      return null;
+    }
+  }
+
   return createClient({
     chain: studionet,
     endpoint: RPC,
