@@ -83,6 +83,7 @@ async function write(functionName: string, args: unknown[]): Promise<string | nu
 }
 
 export async function glCreateAgreement(params: {
+  agreementId: string;
   counterparty: string;
   agreementSummary: string;
   agreementRoot: string;
@@ -90,6 +91,7 @@ export async function glCreateAgreement(params: {
   commitments: string[];
 }): Promise<string | null> {
   return write('create_agreement', [
+    params.agreementId,
     params.counterparty,
     params.agreementSummary,
     params.agreementRoot,
@@ -99,6 +101,7 @@ export async function glCreateAgreement(params: {
 }
 
 export async function glSubmitReveal(params: {
+  revealId: string;
   agreementId: string;
   commitment: string;
   revealedAssumption: string;
@@ -107,6 +110,7 @@ export async function glSubmitReveal(params: {
   requestedAction: string;
 }): Promise<string | null> {
   return write('submit_reveal', [
+    params.revealId,
     params.agreementId,
     params.commitment,
     params.revealedAssumption,

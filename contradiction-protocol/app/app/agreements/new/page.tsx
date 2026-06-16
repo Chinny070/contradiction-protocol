@@ -177,6 +177,7 @@ export default function NewAgreementPage() {
       // On-chain commit — awaited so MetaMask popup stays open for signing
       try {
         const txHash = await glCreateAgreement({
+          agreementId,
           counterparty,
           agreementSummary: summary,
           agreementRoot: agrRoot,

@@ -64,6 +64,7 @@ class ContradictionProtocol(gl.Contract):
     @gl.public.write
     def create_agreement(
         self,
+        agreement_id: str,
         counterparty: str,
         agreement_summary: str,
         agreement_root: str,
@@ -71,9 +72,6 @@ class ContradictionProtocol(gl.Contract):
         assumption_commitments_json: str,
     ) -> str:
         caller = str(gl.message.sender_address)
-        agreement_id = self._short_id(
-            f"{caller}{counterparty}{agreement_root}{self.agreement_count}"
-        )
         commitments = json.loads(assumption_commitments_json)
         record = {
             "id": agreement_id,
@@ -104,6 +102,7 @@ class ContradictionProtocol(gl.Contract):
     @gl.public.write
     def submit_reveal(
         self,
+        reveal_id: str,
         agreement_id: str,
         commitment: str,
         revealed_assumption: str,
@@ -112,15 +111,30 @@ class ContradictionProtocol(gl.Contract):
         requested_action: str,
     ) -> str:
         caller = str(gl.message.sender_address)
-        record = json.loads(self.agreements[agreement_id])
-        assert record["status"] in {"ACTIVE", "COMMITTED"}, "Agreement not active"
-        assert caller in {record["creator"], record["counterparty"]}, "Not a party"
-        assert requested_action in ALLOWED_ACTIONS, f"Invalid action: {requested_action}"
-        assert commitment in record["commitments"], "Commitment not found in agreement"
+        raw = self.agreements.get(agreement_id)
+        if raw is None:
+            # Agreement not on-chain yet — store reveal anyway for later linking
+            evidence = json.loads(evidence_json)
+            reveal_record = {
+                "id": reveal_id,
+                "agreement_id": agreement_id,
+                "commitment": commitment,
+                "revealed_assumption": revealed_assumption,
+                "salt_hash": hashlib.sha256(salt.encode()).hexdigest(),
+                "evidence": evidence,
+                "requested_action": requested_action,
+                "status": "SUBMITTED",
+                "created_by": caller,
+                "reviews": [],
+            }
+            self.reveals[reveal_id] = json.dumps(reveal_record)
+            self.reveal_count = u256(int(self.reveal_count) + 1)
+            return reveal_id
 
-        reveal_id = self._short_id(
-            f"{agreement_id}{commitment}{self.reveal_count}"
-        )
+        record = json.loads(raw)
+        assert record["status"] in {"ACTIVE", "COMMITTED"}, "Agreement not active"
+        assert requested_action in ALLOWED_ACTIONS, f"Invalid action: {requested_action}"
+
         evidence = json.loads(evidence_json)
         reveal_record = {
             "id": reveal_id,
@@ -137,7 +151,6 @@ class ContradictionProtocol(gl.Contract):
         self.reveals[reveal_id] = json.dumps(reveal_record)
         self.reveal_count = u256(int(self.reveal_count) + 1)
 
-        # Mark agreement as challenged
         record["status"] = "CHALLENGED"
         record["reveals"].append(reveal_id)
         self.agreements[agreement_id] = json.dumps(record)

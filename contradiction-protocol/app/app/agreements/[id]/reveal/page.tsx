@@ -85,6 +85,7 @@ export default function RevealPage() {
       // On-chain submit — awaited so MetaMask popup stays open for signing
       try {
         const hash = await glSubmitReveal({
+          revealId,
           agreementId: id as string,
           commitment: selected.commitment,
           revealedAssumption: selected.normalisedText,
