@@ -2,6 +2,8 @@
 
 > Private agreements. Selective reveals. GenLayer AI-consensus interpretation.
 
+**Live:** [contradiction-protocol.vercel.app](https://contradiction-protocol.vercel.app)
+
 ## What Is Contradiction Protocol
 
 Contradiction Protocol is a GenLayer-native selective disclosure dApp for private assumption-based agreements.
@@ -10,6 +12,16 @@ It lets parties commit to hidden assumptions inside private agreements, then rev
 
 This is **not normal escrow**. Escrow asks: "who gets the money?"
 Contradiction Protocol asks: **"did reality break the assumptions that made the agreement fair?"**
+
+## Tech Stack
+
+- **Frontend:** Next.js 14 (App Router), React, TypeScript, Tailwind CSS
+- **Smart Contract:** GenLayer Intelligent Contract (Python) — deployed on GenLayer Studionet
+- **On-chain SDK:** [genlayer-js](https://www.npmjs.com/package/genlayer-js)
+- **Wallet:** MetaMask (injected provider, auto-switches to GenLayer Studionet chain)
+- **Auth/DB:** Firebase (Firestore for agreement metadata, reveals, reviews)
+- **Privacy:** Client-side commitment hashing (keccak256), local IndexedDB vault for private assumptions
+- **Deployment:** Vercel
 
 ## What Problem It Solves
 
@@ -47,7 +59,7 @@ Public:
 - Assumptions root hash
 - Individual assumption commitment hashes
 - Reveal records (assumption text + salt + evidence — only after reveal)
-- Review verdicts
+- Review verdicts (AI-consensus structured JSON)
 
 ## How Commitment and Reveal Works
 
@@ -97,7 +109,7 @@ The evidence is submitted along with the revealed assumption to GenLayer, which 
 
 ## What GenLayer Judges
 
-GenLayer does not simply store agreements. It interprets contradiction claims based on revealed assumptions and evidence.
+GenLayer does not simply store agreements. It interprets contradiction claims based on revealed assumptions and evidence using `gl.nondet.exec_prompt()` and `gl.eq_principle.prompt_comparative()` for multi-validator consensus.
 
 The structured verdict includes:
 
@@ -110,7 +122,6 @@ The structured verdict includes:
   "evidenceQuality": "STRONG",
   "recommendedAction": "RENEGOTIATE",
   "reasoning": "...",
-  "followUpQuestions": [],
   "safetyCaveat": "This is an AI-consensus interpretation, not legal advice."
 }
 ```
@@ -132,7 +143,7 @@ Possible recommended actions: `CONTINUE`, `PAUSE`, `RENEGOTIATE`, `SETTLE_PARTIA
 ### Prerequisites
 
 - Node.js 20+
-- MetaMask or injected browser wallet
+- MetaMask browser extension
 - GenLayer Studionet access
 
 ### Install
@@ -143,15 +154,19 @@ npm install
 
 ### Environment
 
-```bash
-cp .env.example .env.local
-```
-
-Fill in:
+Create `.env.local`:
 
 ```env
-NEXT_PUBLIC_GENLAYER_RPC_URL=http://localhost:4000/api
+NEXT_PUBLIC_GENLAYER_CHAIN=studionet
 NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x...
+NEXT_PUBLIC_GENLAYER_RPC_URL=https://studio.genlayer.com/api
+
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
 ```
 
 ### Run Development
@@ -164,47 +179,54 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## GenLayer Studionet Configuration
 
-1. Install GenLayer CLI or Studio
+1. Open [GenLayer Studio](https://studio.genlayer.com)
 2. Deploy `contracts/ContradictionProtocol.py`
 3. Copy the deployed contract address to `.env.local`
-4. Set your wallet to GenLayer Studionet (Chain ID: 761)
+4. MetaMask auto-switches to GenLayer Studionet (Chain ID: 61999 / `0xf22f`)
+
+## Contract Architecture
+
+The GenLayer Intelligent Contract (`contracts/ContradictionProtocol.py`) uses:
+
+- `TreeMap[str, str]` for on-chain storage (agreements, reveals, reviews)
+- `@gl.public.write` methods: `create_agreement`, `submit_reveal`, `review_contradiction`, `respond_to_reveal`, `finalise_resolution`, `activate_agreement`
+- `@gl.public.view` methods: `get_agreement`, `get_reveal`, `get_review`, `get_user_agreements`, `get_protocol_stats`
+- `gl.nondet.exec_prompt()` for LLM-based contradiction evaluation
+- `gl.eq_principle.prompt_comparative()` for multi-validator consensus on verdicts
 
 ## Wallet Connection
 
 Contradiction Protocol uses injected wallet authentication only.
 
 - Connect MetaMask or any injected provider
+- Auto-switches to GenLayer Studionet chain (61999)
 - No email/password
 - No embedded wallet
-- No WalletConnect required (MVP)
+- No WalletConnect required
 
 ## Demo Walkthrough
 
-1. Open landing page at `/`
-2. Click "Enter Protocol"
-3. Connect injected wallet
-4. Click "New Agreement"
-5. Enter counterparty address and agreement title
-6. Write agreement summary (public)
-7. Add 2-3 private assumptions with trigger conditions
-8. Preview commitment hashes
-9. Sign and commit agreement to GenLayer
-10. Open agreement detail
-11. Click "Reveal Assumption"
-12. Select the affected assumption from local vault
-13. Add URL/text evidence of the changed condition
-14. Preview what will be revealed vs what stays private
-15. Sign and submit the reveal
-16. Open the Review Room
-17. Click "Run Contradiction Review"
-18. Watch GenLayer validators interpret the claim
-19. See the structured verdict
-20. Open Consensus Playground for a full demo trace
+1. Open the app and click "Enter Protocol"
+2. Connect MetaMask wallet
+3. Click "New Agreement"
+4. Enter counterparty address and agreement title
+5. Write agreement summary (public)
+6. Add private assumptions with trigger conditions
+7. Preview commitment hashes
+8. Sign and commit agreement to GenLayer (MetaMask popup)
+9. Open agreement detail
+10. Click "Reveal Assumption"
+11. Select the affected assumption from local vault
+12. Add URL/text evidence of the changed condition
+13. Preview what will be revealed vs what stays private
+14. Sign and submit the reveal (MetaMask popup)
+15. Open the Review Room
+16. Click "Run Contradiction Review"
+17. GenLayer validators interpret the claim via AI consensus
+18. See the structured verdict with recommended action
 
 ## Known Limitations
 
-- GenLayer Studionet requires local setup or access to Studionet endpoint
-- Commitment hashing uses keccak256 on the frontend and sha256 in the Python contract for demo purposes; production should align on keccak256 throughout
 - Local vault uses IndexedDB and is browser-specific — export a backup before clearing browser data
 - File upload evidence is planned for a future phase
 - Counterparty notification is manual in this MVP
