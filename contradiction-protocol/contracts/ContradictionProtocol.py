@@ -21,18 +21,10 @@ class ContradictionProtocol(gl.Contract):
         self.review_count = u256(0)
 
     @gl.public.write
-    def create_agreement(
-        self,
-        agreement_id: str,
-        counterparty: str,
-        agreement_summary: str,
-        agreement_root: str,
-        assumptions_root: str,
-        assumption_commitments_json: str,
-    ) -> str:
+    def create_agreement(self, agreement_id: str, counterparty: str, agreement_summary: str, agreement_root: str, assumptions_root: str, assumption_commitments_json: str) -> str:
         caller = gl.message.sender_address.as_hex
         commitments = json.loads(assumption_commitments_json)
-        record = {
+        record = json.dumps({
             "id": agreement_id,
             "creator": caller,
             "counterparty": counterparty,
@@ -41,19 +33,23 @@ class ContradictionProtocol(gl.Contract):
             "assumptions_root": assumptions_root,
             "commitments": commitments,
             "status": "COMMITTED",
-            "reveals": [],
-        }
-        self.agreements[agreement_id] = json.dumps(record)
+            "reveals": []
+        })
+        self.agreements[agreement_id] = record
         self.agreement_count = self.agreement_count + u256(1)
 
-        existing_creator = self.user_agreements.get(caller, "[]")
-        ids_creator = json.loads(existing_creator)
+        if caller in self.user_agreements:
+            ids_creator = json.loads(self.user_agreements[caller])
+        else:
+            ids_creator = []
         if agreement_id not in ids_creator:
             ids_creator.append(agreement_id)
         self.user_agreements[caller] = json.dumps(ids_creator)
 
-        existing_cp = self.user_agreements.get(counterparty, "[]")
-        ids_cp = json.loads(existing_cp)
+        if counterparty in self.user_agreements:
+            ids_cp = json.loads(self.user_agreements[counterparty])
+        else:
+            ids_cp = []
         if agreement_id not in ids_cp:
             ids_cp.append(agreement_id)
         self.user_agreements[counterparty] = json.dumps(ids_cp)
@@ -63,10 +59,9 @@ class ContradictionProtocol(gl.Contract):
     @gl.public.write
     def activate_agreement(self, agreement_id: str) -> None:
         caller = gl.message.sender_address.as_hex
-        raw = self.agreements.get(agreement_id, "")
-        if raw == "":
+        if agreement_id not in self.agreements:
             raise gl.vm.UserError("Agreement not found")
-        record = json.loads(raw)
+        record = json.loads(self.agreements[agreement_id])
         if record["counterparty"] != caller:
             raise gl.vm.UserError("Only counterparty can activate")
         if record["status"] != "COMMITTED":
@@ -75,18 +70,9 @@ class ContradictionProtocol(gl.Contract):
         self.agreements[agreement_id] = json.dumps(record)
 
     @gl.public.write
-    def submit_reveal(
-        self,
-        reveal_id: str,
-        agreement_id: str,
-        commitment: str,
-        revealed_assumption: str,
-        salt: str,
-        evidence_json: str,
-        requested_action: str,
-    ) -> str:
+    def submit_reveal(self, reveal_id: str, agreement_id: str, commitment: str, revealed_assumption: str, salt: str, evidence_json: str, requested_action: str) -> str:
         caller = gl.message.sender_address.as_hex
-        reveal_record = {
+        reveal_record = json.dumps({
             "id": reveal_id,
             "agreement_id": agreement_id,
             "commitment": commitment,
@@ -96,14 +82,13 @@ class ContradictionProtocol(gl.Contract):
             "requested_action": requested_action,
             "status": "SUBMITTED",
             "created_by": caller,
-            "reviews": [],
-        }
-        self.reveals[reveal_id] = json.dumps(reveal_record)
+            "reviews": []
+        })
+        self.reveals[reveal_id] = reveal_record
         self.reveal_count = self.reveal_count + u256(1)
 
-        raw = self.agreements.get(agreement_id, "")
-        if raw != "":
-            record = json.loads(raw)
+        if agreement_id in self.agreements:
+            record = json.loads(self.agreements[agreement_id])
             record["status"] = "CHALLENGED"
             record["reveals"].append(reveal_id)
             self.agreements[agreement_id] = json.dumps(record)
@@ -112,33 +97,30 @@ class ContradictionProtocol(gl.Contract):
 
     @gl.public.write
     def respond_to_reveal(self, reveal_id: str, response_json: str) -> None:
-        raw = self.reveals.get(reveal_id, "")
-        if raw == "":
+        if reveal_id not in self.reveals:
             raise gl.vm.UserError("Reveal not found")
-        reveal = json.loads(raw)
+        reveal = json.loads(self.reveals[reveal_id])
         reveal["counterparty_response"] = json.loads(response_json)
         self.reveals[reveal_id] = json.dumps(reveal)
 
     @gl.public.write
     def finalise_resolution(self, reveal_id: str) -> None:
-        raw = self.reveals.get(reveal_id, "")
-        if raw == "":
+        if reveal_id not in self.reveals:
             raise gl.vm.UserError("Reveal not found")
-        reveal = json.loads(raw)
+        reveal = json.loads(self.reveals[reveal_id])
         review_ids = reveal.get("reviews", [])
         if not review_ids:
             raise gl.vm.UserError("No review exists for this reveal")
-        review_raw = self.reviews.get(review_ids[-1], "")
-        if review_raw == "":
+        last_review_id = review_ids[-1]
+        if last_review_id not in self.reviews:
             raise gl.vm.UserError("Review not found")
-        review = json.loads(review_raw)
+        review = json.loads(self.reviews[last_review_id])
         verdict = json.loads(review["verdict_json"])
         action = verdict.get("recommendedAction", "")
 
         agreement_id = reveal["agreement_id"]
-        agr_raw = self.agreements.get(agreement_id, "")
-        if agr_raw != "":
-            agreement = json.loads(agr_raw)
+        if agreement_id in self.agreements:
+            agreement = json.loads(self.agreements[agreement_id])
             if action == "CONTINUE" or action == "REJECT_CLAIM":
                 agreement["status"] = "ACTIVE"
             elif action == "PAUSE":
@@ -156,65 +138,49 @@ class ContradictionProtocol(gl.Contract):
 
     @gl.public.write
     def review_contradiction(self, reveal_id: str) -> str:
-        raw = self.reveals.get(reveal_id, "")
-        if raw == "":
+        if reveal_id not in self.reveals:
             raise gl.vm.UserError("Reveal not found")
-        reveal = json.loads(raw)
+        reveal = json.loads(self.reveals[reveal_id])
 
-        agr_raw = self.agreements.get(reveal["agreement_id"], "{}")
-        agreement = json.loads(agr_raw)
+        agreement_id = reveal["agreement_id"]
+        if agreement_id in self.agreements:
+            agreement = json.loads(self.agreements[agreement_id])
+        else:
+            agreement = {}
 
         evidence_lines = []
         for item in reveal.get("evidence", []):
             line = "- [" + item.get("type", "TEXT") + "] " + item.get("title", "") + ": " + item.get("summary", "")
             evidence_lines.append(line)
-        evidence_text = "\n".join(evidence_lines) if evidence_lines else "No evidence provided."
+        if evidence_lines:
+            evidence_text = "\n".join(evidence_lines)
+        else:
+            evidence_text = "No evidence provided."
 
         summary_text = agreement.get("summary", "")
         assumption_text = reveal.get("revealed_assumption", "")
         action_text = reveal.get("requested_action", "")
 
-        prompt = f"""You are a neutral evaluator for a private agreement contradiction claim.
-You are NOT a lawyer; do NOT give legal advice.
-
-Your task: decide whether a revealed assumption that cryptographically matches a prior commitment
-has been contradicted by a real-world change in conditions.
-
-Return ONLY valid JSON with exactly these fields (no markdown, no prose outside JSON):
-{{
-  "revealedClauseBelongs": true,
-  "conditionChanged": true,
-  "contradictionFound": true,
-  "materiality": "LOW",
-  "evidenceQuality": "WEAK",
-  "recommendedAction": "CONTINUE",
-  "reasoning": "short explanation",
-  "safetyCaveat": "safety note"
-}}
-
-Where:
-- revealedClauseBelongs: true or false
-- conditionChanged: true or false
-- contradictionFound: true or false
-- materiality: "LOW" or "MEDIUM" or "HIGH"
-- evidenceQuality: "WEAK" or "MODERATE" or "STRONG"
-- recommendedAction: "CONTINUE" or "PAUSE" or "RENEGOTIATE" or "SETTLE_PARTIAL" or "SETTLE_FULL" or "REJECT_CLAIM" or "INSUFFICIENT_EVIDENCE"
-- reasoning: short explanation, max 3 sentences
-- safetyCaveat: safety note
-
-Agreement summary:
-{summary_text}
-
-Revealed assumption:
-{assumption_text}
-
-Evidence submitted:
-{evidence_text}
-
-Requested action by revealing party:
-{action_text}
-
-Evaluate carefully. Return ONLY the JSON object."""
+        prompt = (
+            "You are a neutral evaluator for a private agreement contradiction claim.\n"
+            "You are NOT a lawyer; do NOT give legal advice.\n\n"
+            "Your task: decide whether a revealed assumption that cryptographically matches a prior commitment\n"
+            "has been contradicted by a real-world change in conditions.\n\n"
+            "Return ONLY valid JSON with exactly these fields:\n"
+            '{"revealedClauseBelongs": true, "conditionChanged": true, "contradictionFound": true, '
+            '"materiality": "LOW", "evidenceQuality": "WEAK", "recommendedAction": "CONTINUE", '
+            '"reasoning": "short explanation", "safetyCaveat": "safety note"}\n\n'
+            "Where materiality is LOW or MEDIUM or HIGH.\n"
+            "Where evidenceQuality is WEAK or MODERATE or STRONG.\n"
+            "Where recommendedAction is CONTINUE or PAUSE or RENEGOTIATE or SETTLE_PARTIAL or SETTLE_FULL or REJECT_CLAIM or INSUFFICIENT_EVIDENCE.\n\n"
+            "Agreement summary:\n" + summary_text + "\n\n"
+            "Revealed assumption:\n" + assumption_text + "\n\n"
+            "Evidence submitted:\n" + evidence_text + "\n\n"
+            "Requested action by revealing party:\n" + action_text + "\n\n"
+            "Evaluate carefully. Return ONLY the JSON object.\n"
+            "Do not include markdown formatting. Do not include ```json or ```.\n"
+            "Your output must be only JSON without any formatting prefix or suffix."
+        )
 
         def call_llm() -> str:
             result = gl.nondet.exec_prompt(prompt)
@@ -224,21 +190,21 @@ Evaluate carefully. Return ONLY the JSON object."""
 
         result = gl.eq_principle.prompt_comparative(
             call_llm,
-            "The value of recommendedAction and materiality must match",
+            "The value of recommendedAction and materiality must match"
         )
 
-        parsed = json.loads(result)
+        parsed_result = json.loads(result)
 
         review_id = reveal_id + "-review"
-        review_record = {
+        review_record = json.dumps({
             "id": review_id,
             "reveal_id": reveal_id,
-            "verdict_json": json.dumps(parsed),
-            "recommended_action": parsed.get("recommendedAction", ""),
-            "materiality": parsed.get("materiality", ""),
-            "evidence_quality": parsed.get("evidenceQuality", ""),
-        }
-        self.reviews[review_id] = json.dumps(review_record)
+            "verdict_json": json.dumps(parsed_result),
+            "recommended_action": parsed_result.get("recommendedAction", ""),
+            "materiality": parsed_result.get("materiality", ""),
+            "evidence_quality": parsed_result.get("evidenceQuality", "")
+        })
+        self.reviews[review_id] = review_record
         self.review_count = self.review_count + u256(1)
 
         reveal["status"] = "DECIDED"
@@ -248,31 +214,37 @@ Evaluate carefully. Return ONLY the JSON object."""
 
     @gl.public.view
     def get_agreement(self, agreement_id: str) -> str:
-        return self.agreements.get(agreement_id, "{}")
+        if agreement_id in self.agreements:
+            return self.agreements[agreement_id]
+        return "{}"
 
     @gl.public.view
     def get_reveal(self, reveal_id: str) -> str:
-        return self.reveals.get(reveal_id, "{}")
+        if reveal_id in self.reveals:
+            return self.reveals[reveal_id]
+        return "{}"
 
     @gl.public.view
     def get_review(self, review_id: str) -> str:
-        return self.reviews.get(review_id, "{}")
+        if review_id in self.reviews:
+            return self.reviews[review_id]
+        return "{}"
 
     @gl.public.view
     def get_user_agreements(self, user_address: str) -> str:
-        ids_raw = self.user_agreements.get(user_address, "[]")
-        ids = json.loads(ids_raw)
+        if user_address not in self.user_agreements:
+            return "[]"
+        ids = json.loads(self.user_agreements[user_address])
         records = []
         for aid in ids:
-            raw = self.agreements.get(aid, "")
-            if raw != "":
-                records.append(json.loads(raw))
+            if aid in self.agreements:
+                records.append(json.loads(self.agreements[aid]))
         return json.dumps(records)
 
     @gl.public.view
     def get_protocol_stats(self) -> str:
         return json.dumps({
-            "total_agreements": int(self.agreement_count),
-            "total_reveals": int(self.reveal_count),
-            "total_reviews": int(self.review_count),
+            "total_agreements": str(self.agreement_count),
+            "total_reveals": str(self.reveal_count),
+            "total_reviews": str(self.review_count)
         })
