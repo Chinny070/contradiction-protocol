@@ -149,13 +149,24 @@ class ContradictionProtocol(gl.Contract):
             agreement = {}
 
         evidence_lines = []
+        fetched_sources = []
         for item in reveal.get("evidence", []):
             line = "- [" + item.get("type", "TEXT") + "] " + item.get("title", "") + ": " + item.get("summary", "")
             evidence_lines.append(line)
+            url = item.get("url", "")
+            if url and (url.startswith("http://") or url.startswith("https://")):
+                page_content = gl.get_webpage(url, mode="text")
+                snippet = page_content[:3000]
+                fetched_sources.append("Fetched from " + url + ":\n" + snippet)
         if evidence_lines:
             evidence_text = "\n".join(evidence_lines)
         else:
             evidence_text = "No evidence provided."
+
+        if fetched_sources:
+            verified_text = "\n\n---\n\n".join(fetched_sources)
+        else:
+            verified_text = "No URLs were provided for on-chain verification."
 
         summary_text = agreement.get("summary", "")
         assumption_text = reveal.get("revealed_assumption", "")
@@ -166,6 +177,9 @@ class ContradictionProtocol(gl.Contract):
             "You are NOT a lawyer; do NOT give legal advice.\n\n"
             "Your task: decide whether a revealed assumption that cryptographically matches a prior commitment\n"
             "has been contradicted by a real-world change in conditions.\n\n"
+            "IMPORTANT: You have been given VERIFIED web content fetched on-chain by the validators.\n"
+            "Use the verified content to check whether the claiming party's evidence is real.\n"
+            "If no verified content was fetched, note that evidence is unverified and weigh it accordingly.\n\n"
             "Return ONLY valid JSON with exactly these fields:\n"
             '{"revealedClauseBelongs": true, "conditionChanged": true, "contradictionFound": true, '
             '"materiality": "LOW", "evidenceQuality": "WEAK", "recommendedAction": "CONTINUE", '
@@ -175,8 +189,10 @@ class ContradictionProtocol(gl.Contract):
             "Where recommendedAction is CONTINUE or PAUSE or RENEGOTIATE or SETTLE_PARTIAL or SETTLE_FULL or REJECT_CLAIM or INSUFFICIENT_EVIDENCE.\n\n"
             "Agreement summary:\n" + summary_text + "\n\n"
             "Revealed assumption:\n" + assumption_text + "\n\n"
-            "Evidence submitted:\n" + evidence_text + "\n\n"
+            "Evidence submitted by claiming party:\n" + evidence_text + "\n\n"
+            "Verified web content fetched on-chain:\n" + verified_text + "\n\n"
             "Requested action by revealing party:\n" + action_text + "\n\n"
+            "Cross-reference the claimed evidence against the verified web content.\n"
             "Evaluate carefully. Return ONLY the JSON object.\n"
             "Do not include markdown formatting. Do not include ```json or ```.\n"
             "Your output must be only JSON without any formatting prefix or suffix."

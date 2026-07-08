@@ -107,6 +107,10 @@ The evidence is submitted along with the revealed assumption to GenLayer, which 
 6. Is the contradiction material?
 7. What action should follow?
 
+### On-Chain Evidence Verification
+
+When evidence includes URLs, the contract uses `gl.get_webpage()` to fetch the actual webpage content on-chain. Validators independently retrieve and verify the source material rather than trusting user-submitted text alone. The fetched content is cross-referenced against the claiming party's evidence summary during AI evaluation.
+
 ## What GenLayer Judges
 
 GenLayer does not simply store agreements. It interprets contradiction claims based on revealed assumptions and evidence using `gl.nondet.exec_prompt()` and `gl.eq_principle.prompt_comparative()` for multi-validator consensus.
